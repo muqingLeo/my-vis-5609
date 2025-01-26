@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+    <body>
+        <!-- compiled from javascript file -->
+        <script>
+            var cnt = 5
+
+            function onClick() {
+                if (cnt > 0) {
+                    cnt -= 1
+                    document.getElementById('clicks').innerHTML = cnt
+                    // Updating the <a> tag with the new value of cnt
+
+                    if (cnt < 1) {
+                        // alert("no more click allowed"): this would display an alert msg
+                        document.querySelector('p').innerHTML =
+                            'no more clicks allowed'
+                        // disable the click button
+                        document.querySelector('button').disabled = true
+                    }
+                }
+            }
+
+            // Set the initial numbe rof clicks to 5
+            window.onload = function () {
+                document.getElementById('clicks').innerHTML = cnt
+                document.querySelector('p').innerHTML =
+                    "Number of Clicks: <a id='clicks'>" + cnt + '</a>'
+            }
+        </script>
+
+        <!-- compiled from css file -->
+        <style>
+            button {
+                background-color: #4a6;
+                color: white;
+                padding: 10px 20px;
+                border: none;
+                cursor: pointer;
+                border-radius: 5px;
+            }
+        </style>
+
+        <button type="button" onClick="onClick()">Click me</button>
+        <p>Number of Clicks: <a id="clicks">0</a></p>
+    </body>
+</html>
