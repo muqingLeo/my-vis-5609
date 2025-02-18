@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { TMovie } from "../types";
   import * as d3 from "d3";
-
+  // define the props of the Line component
   type Props = {
     movies: TMovie[];
     width?: number;
@@ -28,7 +28,7 @@
 
     let topGenres = Object.entries(totalGenreCounts)
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
+      .slice(0, 5)
       .map(([genre]) => genre);
 
     return { genreCountsByYear, topGenres };
@@ -36,7 +36,7 @@
 
   const genreTrends = $derived(() => getGenreTrends(movies));
 
-  const margin = { top: 20, right: 80, bottom: 50, left: 50 };
+  const margin = { top: 20, right: 20, bottom: 30, left: 30 };
   let usableArea = {
     top: margin.top,
     right: width - margin.right,
@@ -94,13 +94,15 @@
 
 {#if movies.length > 0}
   <svg {width} {height}>
+
     {#each genreTrends().topGenres as genre}
       <path
         d={d3
             .line()
             .x((d) => xScale(d[0]))  
             .y((d) => yScale(d[1]))  
-            .curve(d3.curveMonotoneX)(
+            // curveCatmullRom smoothes the line
+            .curve(d3.curveCatmullRom)(
                 Object.entries(genreTrends().genreCountsByYear).map(([year, data]) => [
                     +year, 
                     data[genre] || 0 
@@ -136,7 +138,7 @@
     align-items: center;
     gap: 5px;
     font-weight: bold;
-    font-size: 14px;
+    font-size: 18px;
   }
 
   .color-box {
