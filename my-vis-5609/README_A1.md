@@ -24,3 +24,16 @@ fatal: Need to specify how to reconcile divergent branches.
 ```
 git push --force origin main
 ```
+
+## Assistance from ChatGPT
+```
+For this assignment, I consulted with ChatGPT to:
+
+Polish my pairing algorithm inside Heatmap.svelte.
+
+Verify the key visual encodings in each visual encoding designs.
+
+Solve GitHub repo rebase issues.
+
+Compare the designs and list their Pros & Cons.
+```
