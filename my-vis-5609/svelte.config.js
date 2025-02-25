@@ -7,10 +7,7 @@ const config = {
             fallback: '404.html',
         }),
         paths: {
-            base: process.argv.includes('dev') ? '' : '/my-vis-5609', // Change 'my-vis-5609' to match your GitHub repo name
-        },
-        alias: {
-            $lib: 'src/lib',
+            base: process.argv.includes('dev') ? '' : '/my-vis-5609',
         },
     },
 }
