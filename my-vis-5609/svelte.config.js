@@ -9,9 +9,6 @@ const config = {
         paths: {
             base: process.argv.includes('dev') ? '' : '/my-vis-5609',
         },
-        alias: {
-            $lib: 'src/lib',
-        },
     },
 }
 

@@ -1,50 +1,52 @@
 name: Build and Deploy to GitHub Pages
 
 on:
-  push:
-    branches:
-      - main  # Ensure this matches your repo's default branch
+    push:
+        branches: 'main' # Trigger on pushes to the main branch.
+        # Ensure the branch name matches your repository's default branch,
+        # as it might still be named 'master' in some cases.
 
 jobs:
-  build_site:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    build_site:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
+            - name: Install Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 20
+                  cache: npm
 
-      - name: Install dependencies
-        run: npm install
+            - name: Install dependencies
+              run: npm install
 
-      - name: Build the project
-        env:
-          BASE_PATH: '/${{ github.event.repository.name }}'
-        run: npm run build
+            - name: build
+              env:
+                  BASE_PATH: '/my-vis-5609'
+              run: npm run build
 
-      - name: Upload Artifacts
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: 'build/' # Ensure this matches `pages` in svelte.config.js
+            - name: Upload Artifacts
+              uses: actions/upload-pages-artifact@v3
+              with:
+                  path: 'build/' # this should match the `pages` option in your adapter-static options
 
-  deploy:
-    needs: build_site
-    runs-on: ubuntu-latest
+    deploy:
+        # (optional) Uncomment the line below will deploy to GitHub Pages only if the commit message contains "publish"
+        # if: contains(github.event.head_commit.message, 'publish')
+        needs: build_site
+        runs-on: ubuntu-latest
 
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
+        permissions:
+            pages: write
+            id-token: write
 
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+        environment:
+            name: github-pages
+            url: ${{ steps.deployment.outputs.page_url }}
 
-    steps:
-      - name: Deploy
-        id: deployment
-        uses: actions/deploy-pages@v4
+        steps:
+            - name: Deploy
+              id: deployment
+              uses: actions/deploy-pages@v4
