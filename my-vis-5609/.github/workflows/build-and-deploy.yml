@@ -33,12 +33,14 @@ jobs:
                   path: 'build/' # this should match the `pages` option in your adapter-static options
 
     deploy:
-        # (optional) Uncomment the line below will deploy to GitHub Pages only if the commit message contains "publish"
-        # if: contains(github.event.head_commit.message, 'publish')
+        # (optional) Uncomment the line below to deploy only if the commit message contains "publish"
+        # if: contains(github.event.head_commit.message, 'publish')  
+
         needs: build_site
         runs-on: ubuntu-latest
 
         permissions:
+            contents: read
             pages: write
             id-token: write
 
