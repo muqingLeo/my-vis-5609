@@ -71,6 +71,7 @@
     onMount(loadCsv);
 
     // tip4: below are the derived stores for the options of the selectors
+    // Not sure why there's a tip here since it's already implemented.
     const attrOptionsX = $derived(movies[0] ? Object.keys(movies[0]) : []);
     const attrOptionsY = $derived(
         movies[0] ? Object.keys(movies[0]).filter((d) => d != "genres") : [],
