@@ -40,7 +40,7 @@
         // // once the component mounts, initialize the Three.js scene
         async () => {
             // load the csv file using D3
-            const rawData = await d3.csv("/summer_movies.csv", (d) => {
+            const rawData = await d3.csv("summer_movies.csv", (d) => {
                 return {
                     genres: d["genres"] ?? "",
                 };
