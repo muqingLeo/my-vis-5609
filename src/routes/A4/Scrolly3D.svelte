@@ -1,11 +1,9 @@
 <script lang="ts">
     import { Scroll } from "$lib";
-    import type { TMovie } from "../../types";
     import * as THREE from "three";
     import { onMount } from "svelte";
-    import { onWindowResize, loadModels } from "$lib/Helper-3D";
-    import * as d3 from "d3";
     import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+    import { onWindowResize, loadModels } from "$lib/Helper-3D";
   
     let progress = 0;
     let threeJSContainer: HTMLElement;
@@ -15,18 +13,21 @@
     let controls: OrbitControls;
     const FLOOR = -250;
   
-    // 3D elements
-    const morphs: Array<THREE.Mesh> = [];
+    // Flamingo / 3D elements
+    const morphs: THREE.Mesh[] = [];
     let mixer: THREE.AnimationMixer;
     let genreBars: THREE.Mesh[] = [];
-    let barLabels: THREE.Object3D[] = [];
-    let genreLabels: THREE.Object3D[] = [];
+  
+    // Arrays for decade labels, etc.
+    let barLabels: THREE.Object3D[] = [];      // decade label planes
+    let legendTextPlanes: THREE.Mesh[] = [];   // text planes in the 3D legend
+    let legendCubes: THREE.Mesh[] = [];        // color cubes in the 3D legend
   
     // Data
     const uniqueGenres = ["Drama", "Comedy", "Action", "Romance", "Horror", "Thriller", "Documentary"];
     const decades = ["1950s", "1960s", "1970s", "1980s", "1990s", "2000s"];
   
-    // Fixed colors for each genre
+    // Genre Colors
     const genreColors = {
       "Drama": 0x8B4513,     // Brown
       "Comedy": 0x32CD32,    // Lime Green
@@ -37,6 +38,18 @@
       "Documentary": 0xFFD700 // Gold
     };
   
+    // Additional descriptions for the legend
+    const genreDescriptions = {
+      "Drama": "Intense, character-driven stories",
+      "Comedy": "Humorous, light-hearted films",
+      "Action": "High energy, fast-paced sequences",
+      "Romance": "Love and relationship-focused",
+      "Horror": "Scary, suspenseful themes",
+      "Thriller": "Edge-of-your-seat tension",
+      "Documentary": "Real-life, informative focus"
+    };
+  
+    // Example data for each decade and genre
     const genreData = {
       "1950s": {"Drama": 80, "Comedy": 50, "Action": 30, "Romance": 60, "Horror": 20, "Thriller": 25, "Documentary": 15},
       "1960s": {"Drama": 70, "Comedy": 45, "Action": 50, "Romance": 40, "Horror": 30, "Thriller": 60, "Documentary": 20},
@@ -46,17 +59,33 @@
       "2000s": {"Drama": 75, "Comedy": 65, "Action": 80, "Romance": 60, "Horror": 45, "Thriller": 55, "Documentary": 70}
     };
   
+    // For animation
     const clock = new THREE.Clock();
   
-    // Raycaster and mouse vector for interactivity
+    // For click interactions
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
+    let tooltipEl: HTMLDivElement;  // references the tooltip element
   
-    // Tooltip element (we add it in the markup below)
-    let tooltipEl: HTMLDivElement;
+    onMount(() => {
+      init(window.innerWidth * 0.6, window.innerHeight * 0.9);
   
-    // Create a basic HTML legend (for the non-3D legend)
-    function createSimpleLegend() {
+      // Add an HTML legend (at bottom-left)
+      const legendDiv = createHtmlLegend();
+      document.querySelector('.viz-container')?.appendChild(legendDiv);
+  
+      tooltipEl = document.getElementById("tooltip") as HTMLDivElement;
+  
+      // Add click event listener (no hover events now)
+      renderer.domElement.addEventListener("click", onClick);
+  
+      return () => {
+        renderer.domElement.removeEventListener("click", onClick);
+      };
+    });
+  
+    // Create a simple HTML legend with genre names and descriptions
+    function createHtmlLegend() {
       const div = document.createElement('div');
       div.className = 'simple-legend';
       div.innerHTML = `
@@ -64,35 +93,17 @@
         <ul class="legend-list">
           ${Object.entries(genreColors).map(([genre, color]) => {
             const hexColor = `#${color.toString(16).padStart(6, '0')}`;
-            return `<li class="legend-item">
-                      <span class="color-box" style="background-color: ${hexColor};"></span>
-                      <span class="genre-name">${genre}</span>
-                    </li>`;
+            return `
+              <li class="legend-item">
+                <span class="color-box" style="background-color: ${hexColor};"></span>
+                <span class="genre-name">${genre}: ${genreDescriptions[genre]}</span>
+              </li>
+            `;
           }).join('')}
         </ul>
       `;
       return div;
     }
-  
-    onMount(() => {
-      init(window.innerWidth * 0.6, window.innerHeight * 0.9);
-  
-      // Create and add the simple HTML legend
-      const legendDiv = createSimpleLegend();
-      document.querySelector('.viz-container')?.appendChild(legendDiv);
-  
-      // Get the tooltip element by its id
-      tooltipEl = document.getElementById("tooltip") as HTMLDivElement;
-  
-      // Add pointer event listeners for hover and click interactivity
-      renderer.domElement.addEventListener("pointermove", onPointerMove);
-      renderer.domElement.addEventListener("click", onClick);
-  
-      return () => {
-        renderer.domElement.removeEventListener("pointermove", onPointerMove);
-        renderer.domElement.removeEventListener("click", onClick);
-      };
-    });
   
     function init(SCREEN_WIDTH: number, SCREEN_HEIGHT: number) {
       // Renderer
@@ -132,55 +143,27 @@
       ground.receiveShadow = true;
       scene.add(ground);
   
-      // Create genre bars and labels
+      // Build the 3D legend (in the scene)
+      create3DLegend();
+  
+      // Create the bars for each decade & genre with labels
       createGenreBarsAndLabels();
   
       // Load flamingo models
       const models = [
-        {
-          path: "3d/Flamingo.glb",
-          speed: 450,
-          duration: 1,
-          x: 300,
-          y: FLOOR + 250,
-          z: 0,
-          scale: 0.3,
-        },
-        {
-          path: "3d/Flamingo.glb",
-          speed: 500,
-          duration: 1,
-          x: -200,
-          y: FLOOR + 230,
-          z: -200,
-          scale: 0.25,
-        },
-        {
-          path: "3d/Flamingo.glb",
-          speed: 550,
-          duration: 1,
-          x: 0,
-          y: FLOOR + 270,
-          z: 300,
-          scale: 0.35,
-        },
-        {
-          path: "3d/Flamingo.glb",
-          speed: 600,
-          duration: 1,
-          x: -150,
-          y: FLOOR + 260,
-          z: 150,
-          scale: 0.3,
-        }
+        { path: "3d/Flamingo.glb", speed: 450, duration: 1, x: 300,  y: FLOOR + 250, z: 0,    scale: 0.3 },
+        { path: "3d/Flamingo.glb", speed: 500, duration: 1, x: -200, y: FLOOR + 230, z: -200, scale: 0.25 },
+        { path: "3d/Flamingo.glb", speed: 550, duration: 1, x: 0,    y: FLOOR + 270, z: 300,  scale: 0.35 },
+        { path: "3d/Flamingo.glb", speed: 600, duration: 1, x: -150, y: FLOOR + 260, z: 150,  scale: 0.3 }
       ];
       mixer = loadModels(models, scene, mixer, morphs);
   
+      // Resize handler
       window.addEventListener("resize", () => {
         onWindowResize(camera, renderer, window.innerWidth * 0.6, window.innerHeight * 0.9);
       });
   
-      // Add OrbitControls so the user can interact with the scene
+      // OrbitControls
       controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.05;
@@ -190,12 +173,94 @@
       controls.target.set(0, 0, 0);
       controls.update();
   
-      // Set up animation loop
+      // Start animation loop
       renderer.setAnimationLoop(animate);
     }
   
+    // 3D Legend: colored cubes and text that always face the camera
+    function create3DLegend() {
+      const legendGroup = new THREE.Group();
+      legendGroup.position.set(-200, FLOOR + 350, 250);
+      scene.add(legendGroup);
+  
+      // Black background panel for the legend
+      const bgGeometry = new THREE.PlaneGeometry(200, 280);
+      const bgMaterial = new THREE.MeshBasicMaterial({
+        color: 0x000000,
+        transparent: true,
+        opacity: 0.7,
+        side: THREE.DoubleSide
+      });
+      const bgPanel = new THREE.Mesh(bgGeometry, bgMaterial);
+      bgPanel.position.set(0, -70, -1); // slightly behind
+      legendGroup.add(bgPanel);
+  
+      // "GENRE LEGEND" Title
+      const titleCanvas = document.createElement('canvas');
+      titleCanvas.width = 512;
+      titleCanvas.height = 64;
+      const titleCtx = titleCanvas.getContext('2d');
+      if (titleCtx) {
+        titleCtx.fillStyle = 'white';
+        titleCtx.font = 'Bold 36px Arial';
+        titleCtx.fillText('GENRE LEGEND', 10, 40);
+      }
+      const titleTexture = new THREE.CanvasTexture(titleCanvas);
+      titleTexture.minFilter = THREE.LinearFilter;
+      titleTexture.magFilter = THREE.LinearFilter;
+      const titleMaterial = new THREE.MeshBasicMaterial({
+        map: titleTexture,
+        transparent: true,
+        side: THREE.DoubleSide
+      });
+      const titlePlane = new THREE.Mesh(new THREE.PlaneGeometry(180, 30), titleMaterial);
+      titlePlane.position.set(0, 60, 0);
+      legendGroup.add(titlePlane);
+  
+      // For each genre, add a colored cube and text label
+      uniqueGenres.forEach((genre, i) => {
+        const barColor = genreColors[genre];
+        // The color cube
+        const cubeGeo = new THREE.BoxGeometry(15, 15, 15);
+        const cubeMat = new THREE.MeshStandardMaterial({
+          color: barColor,
+          emissive: barColor,
+          emissiveIntensity: 0.5
+        });
+        const cube = new THREE.Mesh(cubeGeo, cubeMat);
+        cube.position.set(-70, i * -30, 0);
+        legendGroup.add(cube);
+        legendCubes.push(cube);
+  
+        // The text label for the genre
+        const textCanvas = document.createElement('canvas');
+        textCanvas.width = 512;
+        textCanvas.height = 64;
+        const ctx = textCanvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = 'white';
+          ctx.font = 'Bold 32px Arial';
+          ctx.fillText(genre, 10, 40);
+        }
+        const textTexture = new THREE.CanvasTexture(textCanvas);
+        textTexture.minFilter = THREE.LinearFilter;
+        textTexture.magFilter = THREE.LinearFilter;
+        const textMaterial = new THREE.MeshBasicMaterial({
+          map: textTexture,
+          transparent: true,
+          side: THREE.DoubleSide
+        });
+        const textPlane = new THREE.Mesh(new THREE.PlaneGeometry(70, 20), textMaterial);
+        textPlane.position.set(-20, i * -30, 0);
+        legendGroup.add(textPlane);
+        legendTextPlanes.push(textPlane);
+      });
+    }
+  
+    // Create bars for each decade and genre.
+    // Each bar gets a label plane that is hidden by default.
+    // The label is placed well above the bar and will be toggled on click.
     function createGenreBarsAndLabels() {
-      const colorScale = (genre: string) => new THREE.Color(genreColors[genre]);
       let maxValue = 0;
       Object.values(genreData).forEach(decadeData => {
         Object.values(decadeData).forEach(count => {
@@ -208,121 +273,45 @@
       const genreSpacing = 20;
       const barWidth = 11;
   
-      // Create a group for the 3D legend (inside the scene)
-      const legendGroup = new THREE.Group();
-      const bgGeometry = new THREE.PlaneGeometry(200, 280);
-      const bgMaterial = new THREE.MeshBasicMaterial({
-        color: 0x000000,
-        transparent: true,
-        opacity: 0.7,
-        side: THREE.DoubleSide
-      });
-      const bgPanel = new THREE.Mesh(bgGeometry, bgMaterial);
-      bgPanel.position.set(40, -90, 0);
-      legendGroup.add(bgPanel);
+      // Create decade labels
+      decades.forEach((decade, decadeIndex) => {
+        const decadeX = (decadeIndex - decades.length / 2) * decadeSpacing;
   
-      const titleCanvas = document.createElement('canvas');
-      const titleCtx = titleCanvas.getContext('2d');
-      titleCanvas.width = 512;
-      titleCanvas.height = 64;
-      if (titleCtx) {
-        titleCtx.fillStyle = 'white';
-        titleCtx.font = 'Bold 36px Arial';
-        titleCtx.fillText('GENRE LEGEND', 10, 40);
-        const titleTexture = new THREE.CanvasTexture(titleCanvas);
-        const titleMaterial = new THREE.MeshBasicMaterial({
-          map: titleTexture,
+        const dCanvas = document.createElement('canvas');
+        dCanvas.width = 256;
+        dCanvas.height = 64;
+        const dCtx = dCanvas.getContext('2d');
+        if (dCtx) {
+          dCtx.fillStyle = 'white';
+          dCtx.font = 'Bold 32px Arial';
+          dCtx.fillText(decade, 10, 42);
+        }
+        const dTexture = new THREE.CanvasTexture(dCanvas);
+        dTexture.minFilter = THREE.LinearFilter;
+        dTexture.magFilter = THREE.LinearFilter;
+        const dMaterial = new THREE.MeshBasicMaterial({
+          map: dTexture,
           transparent: true,
           side: THREE.DoubleSide
         });
-        const titlePlane = new THREE.Mesh(
-          new THREE.PlaneGeometry(180, 30),
-          titleMaterial
-        );
-        titlePlane.position.set(40, 60, 0);
-        legendGroup.add(titlePlane);
-      }
+        const dPlane = new THREE.Mesh(new THREE.PlaneGeometry(100, 25), dMaterial);
+        dPlane.position.set(decadeX, FLOOR + 20, 120);
+        scene.add(dPlane);
+        barLabels.push(dPlane);
   
-      legendGroup.position.set(-200, FLOOR + 350, 250);
-      legendGroup.rotation.y = Math.PI / 6;
-      scene.add(legendGroup);
-  
-      uniqueGenres.forEach((genre, genreIndex) => {
-        const barColor = colorScale(genre);
-        const cubeGeo = new THREE.BoxGeometry(20, 20, 20);
-        const cubeMat = new THREE.MeshStandardMaterial({
-          color: barColor,
-          emissive: barColor,
-          emissiveIntensity: 0.5
-        });
-        const cube = new THREE.Mesh(cubeGeo, cubeMat);
-        cube.position.set(0, genreIndex * -30, 0);
-        legendGroup.add(cube);
-  
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = 256;
-        canvas.height = 64;
-        if (ctx) {
-          ctx.fillStyle = 'white';
-          ctx.font = 'Bold 36px Arial';
-          ctx.fillText(genre, 10, 40);
-          const texture = new THREE.CanvasTexture(canvas);
-          const material = new THREE.MeshBasicMaterial({
-            map: texture,
-            transparent: true,
-            side: THREE.DoubleSide
-          });
-          const plane = new THREE.Mesh(
-            new THREE.PlaneGeometry(120, 30),
-            material
-          );
-          plane.position.set(80, genreIndex * -30, 0);
-          legendGroup.add(plane);
-          genreLabels.push(plane);
-        }
-      });
-  
-      decades.forEach((decade, decadeIndex) => {
-        const decadeX = (decadeIndex - decades.length / 2) * decadeSpacing;
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = 128;
-        canvas.height = 32;
-        if (ctx) {
-          ctx.fillStyle = 'white';
-          ctx.font = 'Bold 20px Arial';
-          ctx.fillText(decade, 5, 24);
-          const texture = new THREE.CanvasTexture(canvas);
-          const material = new THREE.MeshBasicMaterial({
-            map: texture,
-            transparent: true,
-            side: THREE.DoubleSide
-          });
-          const plane = new THREE.Mesh(
-            new THREE.PlaneGeometry(80, 20),
-            material
-          );
-          plane.position.set(decadeX, FLOOR + 20, 120);
-          // Remove any unwanted rotation so the text stays upright
-          plane.rotation.x = 0;
-          scene.add(plane);
-          barLabels.push(plane);
-          plane.userData = { decadeIndex };
-        }
-  
+        // For each genre in this decade, create a bar and a label
         uniqueGenres.forEach((genre, genreIndex) => {
           const count = genreData[decade][genre] || 0;
           const height = Math.max(count * heightScale, 10);
           const genreZ = (genreIndex - uniqueGenres.length / 2) * genreSpacing;
+  
           const barGeo = new THREE.BoxGeometry(barWidth, height, barWidth);
-          const barColor = colorScale(genre);
           const barMat = new THREE.MeshStandardMaterial({
-            color: barColor,
+            color: genreColors[genre],
             metalness: 0.3,
             roughness: 0.8,
-            emissive: barColor,
-            emissiveIntensity: 0.3,
+            emissive: genreColors[genre],
+            emissiveIntensity: 0.3
           });
           const bar = new THREE.Mesh(barGeo, barMat);
           bar.position.set(decadeX, FLOOR + height / 2, genreZ);
@@ -330,36 +319,41 @@
           bar.receiveShadow = true;
           bar.userData = { decade, genre, count, decadeIndex, genreIndex };
   
-          // Create a label for the bar (with both genre and count)
-          const genreCanvas = document.createElement('canvas');
-          const genreCtx = genreCanvas.getContext('2d');
-          genreCanvas.width = 256;
-          genreCanvas.height = 64;
-          if (genreCtx) {
-            // Background for readability
-            genreCtx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-            genreCtx.fillRect(0, 0, 256, 64);
-            genreCtx.strokeStyle = barColor.getStyle();
-            genreCtx.lineWidth = 3;
-            genreCtx.strokeRect(1, 1, 254, 62);
-            genreCtx.fillStyle = 'white';
-            genreCtx.font = 'Bold 22px Arial';
-            genreCtx.fillText(`${genre}: ${count}`, 10, 38);
-            const genreTexture = new THREE.CanvasTexture(genreCanvas);
-            const genreMaterial = new THREE.MeshBasicMaterial({
-              map: genreTexture,
-              transparent: true,
-              side: THREE.DoubleSide
-            });
-            const genrePlane = new THREE.Mesh(
-              new THREE.PlaneGeometry(40, 20),
-              genreMaterial
-            );
-            // Position the label to the side of the bar
-            genrePlane.position.set(barWidth + 25, 0, 0);
-            genrePlane.rotation.y = -Math.PI / 2;
-            bar.add(genrePlane);
+          // Create the label for the bar
+          const labelCanvas = document.createElement('canvas');
+          labelCanvas.width = 512;
+          labelCanvas.height = 128;
+          const labelCtx = labelCanvas.getContext('2d');
+          if (labelCtx) {
+            labelCtx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            labelCtx.fillRect(0, 0, 512, 128);
+            labelCtx.strokeStyle = 'white';
+            labelCtx.lineWidth = 4;
+            labelCtx.strokeRect(2, 2, 508, 124);
+            labelCtx.fillStyle = 'white';
+            labelCtx.font = 'Bold 36px Arial';
+            labelCtx.fillText(`${genre}: ${count}`, 10, 70);
           }
+          const labelTexture = new THREE.CanvasTexture(labelCanvas);
+          labelTexture.minFilter = THREE.LinearFilter;
+          labelTexture.magFilter = THREE.LinearFilter;
+          const labelMaterial = new THREE.MeshBasicMaterial({
+            map: labelTexture,
+            transparent: true,
+            side: THREE.DoubleSide
+          });
+          const labelPlane = new THREE.Mesh(new THREE.PlaneGeometry(80, 40), labelMaterial);
+  
+          // Place the label well above the bar
+          labelPlane.position.set(0, height + 30, 0);
+          // Disable depth test so it's always visible
+          labelMaterial.depthTest = false;
+          labelMaterial.depthWrite = false;
+          labelPlane.renderOrder = 9999;
+          // Hide label initially (will be toggled on click)
+          labelPlane.visible = false;
+          bar.add(labelPlane);
+          bar.userData.labelPlane = labelPlane;
   
           bar.visible = false;
           scene.add(bar);
@@ -368,38 +362,35 @@
       });
     }
   
+    // Animation loop
     function animate() {
-      // Update OrbitControls if enabled
       if (controls) controls.update();
   
-      // Different phases based on scroll progress
+      // Determine phase from scroll progress
       const phase = Math.floor(progress / 25);
       const phaseProgress = (progress % 25) / 25;
-  
-      // Update camera FOV for phase 3 (overview)
       camera.fov = phase === 3 ? 40 : 35;
       camera.updateProjectionMatrix();
   
       switch (phase) {
-        case 0: // Introduction phase
+        case 0:
           camera.position.set(0, FLOOR + 200, 300 + phaseProgress * 300);
           camera.lookAt(0, 0, 0);
           genreBars.forEach(bar => (bar.visible = false));
           barLabels.forEach(label => (label.visible = false));
-          genreLabels.forEach(label => (label.visible = true));
           morphs.forEach(flamingo => (flamingo.visible = false));
           break;
-        case 1: // First half of decades
+        case 1: {
           const halfPoint = Math.ceil(decades.length / 2);
           const targetDecade = Math.floor(phaseProgress * halfPoint);
           camera.position.set(-200 + phaseProgress * 200, FLOOR + 250, 450 - phaseProgress * 150);
           camera.lookAt(0, 0, 0);
           genreBars.forEach(bar => {
-            const userData = bar.userData;
-            if (userData.decadeIndex < targetDecade) {
+            const ud = bar.userData;
+            if (ud.decadeIndex < targetDecade) {
               bar.visible = true;
               bar.scale.y = 1;
-            } else if (userData.decadeIndex === targetDecade) {
+            } else if (ud.decadeIndex === targetDecade) {
               bar.visible = true;
               bar.scale.y = Math.min(1, (phaseProgress * halfPoint) % 1 * 3);
             } else {
@@ -407,23 +398,23 @@
             }
           });
           barLabels.forEach(label => {
-            const userData = label.userData;
-            label.visible = userData && userData.decadeIndex <= targetDecade;
+            const ud = label.userData;
+            label.visible = ud && ud.decadeIndex <= targetDecade;
           });
-          genreLabels.forEach(label => (label.visible = true));
           morphs.forEach(flamingo => (flamingo.visible = false));
           break;
-        case 2: // Second half of decades
+        }
+        case 2: {
           const secondHalfStart = Math.ceil(decades.length / 2);
           const secondHalfTarget = secondHalfStart + Math.floor(phaseProgress * (decades.length - secondHalfStart));
           camera.position.set(0, FLOOR + 250 + phaseProgress * 50, 300);
           camera.lookAt(0, 50, 0);
           genreBars.forEach(bar => {
-            const userData = bar.userData;
-            if (userData.decadeIndex < secondHalfTarget) {
+            const ud = bar.userData;
+            if (ud.decadeIndex < secondHalfTarget) {
               bar.visible = true;
               bar.scale.y = 1;
-            } else if (userData.decadeIndex === secondHalfTarget) {
+            } else if (ud.decadeIndex === secondHalfTarget) {
               bar.visible = true;
               bar.scale.y = Math.min(1, (phaseProgress * (decades.length - secondHalfStart)) % 1 * 3);
             } else {
@@ -431,10 +422,10 @@
             }
           });
           barLabels.forEach(label => {
-            const userData = label.userData;
-            label.visible = userData && userData.decadeIndex <= secondHalfTarget;
+            const ud = label.userData;
+            label.visible = ud && ud.decadeIndex <= secondHalfTarget;
           });
-          genreLabels.forEach(label => (label.visible = true));
+          // Show flamingos gradually
           morphs.forEach((flamingo, index) => {
             flamingo.visible = phaseProgress > 0.6;
             if (flamingo.visible) {
@@ -444,20 +435,19 @@
             }
           });
           break;
-        case 3: // Overview phase with flamingos
+        }
+        case 3:
           camera.fov = 48;
           camera.updateProjectionMatrix();
           genreBars.forEach(bar => {
             bar.visible = true;
-            const userData = bar.userData;
-            const material = bar.material as THREE.MeshStandardMaterial;
-            if (material.emissive) {
-              const time = clock.getElapsedTime();
-              material.emissiveIntensity = 0.3 + Math.sin(time * 2 + userData.genreIndex * 0.5) * 0.1;
+            const mat = bar.material as THREE.MeshStandardMaterial;
+            const time = clock.getElapsedTime();
+            if (mat.emissive) {
+              mat.emissiveIntensity = 0.3 + Math.sin(time * 2 + bar.userData.genreIndex * 0.5) * 0.1;
             }
           });
           barLabels.forEach(label => (label.visible = true));
-          genreLabels.forEach(label => (label.visible = false));
           morphs.forEach(flamingo => (flamingo.visible = true));
           const angle = phaseProgress * Math.PI * 2;
           const radius = 450;
@@ -468,61 +458,87 @@
             Math.cos(angle) * radius
           );
           camera.lookAt(0, FLOOR + 60, 0);
-          const delta = clock.getDelta();
-          if (mixer) {
-            mixer.update(delta);
-          }
-          morphs.forEach((flamingo, index) => {
-            const speedFactor = 0.5 + (index * 0.2);
-            const t = clock.getElapsedTime() * speedFactor;
-            const flamingoRadius = 120 + index * 40;
-            flamingo.position.x = Math.sin(t + index * Math.PI / 1.5) * flamingoRadius;
-            flamingo.position.z = Math.cos(t + index * Math.PI / 1.5) * flamingoRadius;
-            flamingo.rotation.y = Math.atan2(
-              Math.cos(t + index * Math.PI / 1.5),
-              -Math.sin(t + index * Math.PI / 1.5)
-            );
-            const originalY = FLOOR + 230 + (index * 10);
-            flamingo.position.y = originalY + Math.sin(t * 2) * 5;
-          });
           break;
       }
+  
+      // Update flamingo movement if visible
+      const delta = clock.getDelta();
+      if (mixer) mixer.update(delta);
+      morphs.forEach((flamingo, index) => {
+        if (flamingo.visible) {
+          const speedFactor = 0.5 + index * 0.2;
+          const t = clock.getElapsedTime() * speedFactor;
+          const flamingoRadius = 120 + index * 40;
+          flamingo.position.x = Math.sin(t + index * Math.PI / 1.5) * flamingoRadius;
+          flamingo.position.z = Math.cos(t + index * Math.PI / 1.5) * flamingoRadius;
+          flamingo.rotation.y = Math.atan2(
+            Math.cos(t + index * Math.PI / 1.5),
+            -Math.sin(t + index * Math.PI / 1.5)
+          );
+          const originalY = FLOOR + 230 + index * 10;
+          flamingo.position.y = originalY + Math.sin(t * 2) * 5;
+        }
+      });
+  
+      // Make sure decade labels and 3D legend text face the camera
+      barLabels.forEach(label => label.lookAt(camera.position));
+      legendTextPlanes.forEach(plane => plane.lookAt(camera.position));
+      legendCubes.forEach(cube => cube.lookAt(camera.position));
+  
+      // Ensure each bar's label (if visible) faces the camera
+      genreBars.forEach(bar => {
+        const labelPlane = bar.userData.labelPlane as THREE.Mesh;
+        if (labelPlane) {
+          labelPlane.lookAt(camera.position);
+        }
+      });
   
       renderer.render(scene, camera);
     }
   
-    // Pointer event handler for hover interaction
-    function onPointerMove(event: PointerEvent) {
-      const rect = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  
-      raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(genreBars);
-      if (intersects.length > 0) {
-        const bar = intersects[0].object as THREE.Mesh;
-        showTooltip(bar, event.clientX, event.clientY);
-      } else {
-        hideTooltip();
-      }
-    }
-  
-    // Pointer event handler for click interaction
+    // Click logic: toggle the bar's label and tooltip on click.
     function onClick(event: PointerEvent) {
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  
       raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(genreBars);
+      // Enable recursive search so that clicking on a child (e.g. label plane) still detects the bar.
+      const intersects = raycaster.intersectObjects(genreBars, true);
       if (intersects.length > 0) {
-        const bar = intersects[0].object as THREE.Mesh;
-        console.log("Clicked on bar:", bar.userData);
-        // You can add further interactivity here (e.g. highlight or show detailed info)
+        // Climb the parent chain to get the top-level bar
+        let bar = intersects[0].object;
+        while (bar.parent && !genreBars.includes(bar)) {
+          bar = bar.parent;
+        }
+        // Toggle the label plane and tooltip on click
+        if (bar.userData.labelPlane) {
+          const currentlyVisible = bar.userData.labelPlane.visible;
+          if (currentlyVisible) {
+            bar.userData.labelPlane.visible = false;
+            hideTooltip();
+          } else {
+            bar.userData.labelPlane.visible = true;
+            showTooltip(bar, event.clientX, event.clientY);
+          }
+        }
+        // Hide labels for all other bars
+        genreBars.forEach(otherBar => {
+          if (otherBar !== bar && otherBar.userData.labelPlane) {
+            otherBar.userData.labelPlane.visible = false;
+          }
+        });
+      } else {
+        // Clicked outside any bar: hide all labels and tooltip
+        hideTooltip();
+        genreBars.forEach(bar => {
+          if (bar.userData.labelPlane) {
+            bar.userData.labelPlane.visible = false;
+          }
+        });
       }
     }
   
-    // Show tooltip near the pointer with the bar's data
+    // Show tooltip near the mouse pointer with the bar's data.
     function showTooltip(bar: THREE.Mesh, x: number, y: number) {
       const { decade, genre, count } = bar.userData;
       tooltipEl.innerHTML = `<strong>${decade}</strong><br/>${genre}: ${count}`;
@@ -567,7 +583,7 @@
       <p>Action has remained consistently popular across decades, while genres like Animation and Documentary have seen significant growth in recent times.</p>
     </div>
   
-    <!-- Visualization container with a progress indicator -->
+    <!-- Visualization container with progress indicator -->
     <svelte:fragment slot="viz">
       <div class="viz-container">
         <div class="progress-display">Scroll Progress: {progress.toFixed(0)}%</div>
@@ -576,10 +592,20 @@
     </svelte:fragment>
   </Scroll>
   
-  <!-- Tooltip for displaying column data -->
+  <!-- Tooltip for displaying bar data on click -->
   <div
     id="tooltip"
-    style="position: absolute; pointer-events: none; background: rgba(0,0,0,0.7); color: white; padding: 6px; border-radius: 4px; font-size: 14px; display: none; z-index: 999;"
+    style="
+      position: absolute;
+      pointer-events: none;
+      background: rgba(0,0,0,0.7);
+      color: white;
+      padding: 6px;
+      border-radius: 4px;
+      font-size: 14px;
+      display: none;
+      z-index: 999;
+    "
   ></div>
   
   <style>
@@ -615,13 +641,13 @@
       border: 2px solid white;
       border-radius: 5px;
       padding: 10px;
-      max-width: 160px;
+      max-width: 300px;
       font-family: Arial, sans-serif;
     }
     .legend-title {
       color: white;
       font-weight: bold;
-      font-size: 14px;
+      font-size: 16px;
       text-align: center;
       margin-bottom: 8px;
     }
